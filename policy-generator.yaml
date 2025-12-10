@@ -1,0 +1,20 @@
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PolicyGenerator
+metadata:
+  name: gitops-policy-generator-gitrepo
+policyDefaults:
+  namespace: gitops-configure
+  orderManifests: true
+  consolidateManifests: false
+  remediationAction: enforce
+  placement:
+    name: gitops-configure
+    labelSelector:
+      vendor: OpenShift
+placementBindingDefaults:
+  name: gitops-configure
+policies:
+  - name: gitops-configure
+    manifests:
+      - path: gitops-fromsecret.yaml

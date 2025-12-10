@@ -1,0 +1,70 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  annotations:
+    policy.open-cluster-management.io/categories: CM Configuration Management
+    policy.open-cluster-management.io/controls: CM-2 Baseline Configuration
+    policy.open-cluster-management.io/description: ""
+    policy.open-cluster-management.io/standards: NIST SP 800-53
+  name: rep-secret-test
+  namespace: openshift-gitops
+spec:
+  disabled: false
+  remediationAction: enforce   # <<< FIX ADDED HERE
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: rep-secret-test
+        spec:
+          object-templates:
+            - complianceType: musthave 
+              objectDefinition:
+                apiVersion: v1
+                kind: Secret
+                metadata:
+                  labels:
+                    argocd.argoproj.io/secret-type: repository
+                  name: acm-gitops-repo
+                  namespace: openshift-gitops
+                stringData:
+                  password: '{{hub (fromSecret "openshift-gitops" "acm-git-secret-test" "password") hub}}'
+                  url: '{{hub (fromSecret "openshift-gitops" "acm-git-secret-test" "url") hub}}'
+                  username: '{{hub (fromSecret "openshift-gitops" "acm-git-secret-test" "username") hub}}'
+                type: Opaque
+---
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+  name: rep-secret-test
+  namespace: openshift-gitops
+spec:
+  predicates:
+    - requiredClusterSelector:
+        labelSelector:
+          matchExpressions:
+            - key: vendor
+              operator: In
+              values:
+                - OpenShift
+  tolerations:
+    - key: cluster.open-cluster-management.io/unavailable
+      operator: Exists
+    - key: cluster.open-cluster-management.io/unreachable
+      operator: Exists
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: binding-rep-secret-test
+  namespace: openshift-gitops
+placementRef:
+  apiGroup: cluster.open-cluster-management.io
+  kind: Placement
+  name: rep-secret-test
+subjects:
+  - apiGroup: policy.open-cluster-management.io
+    kind: Policy
+    name: rep-secret-test   # <<< corrected to match policy name
+
