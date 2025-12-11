@@ -1,0 +1,190 @@
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+    annotations:
+        policy.open-cluster-management.io/categories: CM Configuration Management
+        policy.open-cluster-management.io/controls: CM-2 Baseline Configuration
+        policy.open-cluster-management.io/description: ""
+        policy.open-cluster-management.io/standards: NIST SP 800-53
+    name: gitops-configure
+    namespace: gitops-configure
+spec:
+    disabled: false
+    policy-templates:
+        - objectDefinition:
+            apiVersion: policy.open-cluster-management.io/v1beta1
+            kind: OperatorPolicy
+            metadata:
+                name: install-gitops-operator
+            spec:
+                complianceType: musthave
+                remediationAction: enforce
+                severity: critical
+                subscription:
+                    channel: latest
+                    name: openshift-gitops-operator
+                    namespace: openshift-gitops-operator
+                    source: redhat-operators
+                    sourceNamespace: openshift-marketplace
+                    startingCSV: openshift-gitops-operator.v1.16.2
+                upgradeApproval: Automatic
+                versions: []
+        - extraDependencies:
+            - apiVersion: policy.open-cluster-management.io/v1beta1
+              compliance: Compliant
+              kind: OperatorPolicy
+              name: install-gitops-operator
+          objectDefinition:
+            apiVersion: policy.open-cluster-management.io/v1
+            kind: ConfigurationPolicy
+            metadata:
+                name: gitops-configure
+            spec:
+                object-templates:
+                    - complianceType: musthave
+                      objectDefinition:
+                        apiVersion: rbac.authorization.k8s.io/v1
+                        kind: ClusterRoleBinding
+                        metadata:
+                            name: argo-admin
+                        roleRef:
+                            apiGroup: rbac.authorization.k8s.io
+                            kind: ClusterRole
+                            name: cluster-admin
+                        subjects:
+                            - kind: ServiceAccount
+                              name: openshift-gitops-argocd-application-controller
+                              namespace: openshift-gitops
+                remediationAction: enforce
+                severity: low
+        - extraDependencies:
+            - apiVersion: policy.open-cluster-management.io/v1
+              compliance: Compliant
+              kind: ConfigurationPolicy
+              name: gitops-configure
+          objectDefinition:
+            apiVersion: policy.open-cluster-management.io/v1
+            kind: ConfigurationPolicy
+            metadata:
+                name: gitops-configure2
+            spec:
+                object-templates:
+                    - complianceType: musthave
+                      objectDefinition:
+                        apiVersion: v1
+                        kind: ConfigMap
+                        metadata:
+                            labels:
+                                config.openshift.io/inject-trusted-cabundle: "true"
+                            name: cluster-root-ca-bundle
+                            namespace: openshift-gitops
+                remediationAction: enforce
+                severity: low
+        - extraDependencies:
+            - apiVersion: policy.open-cluster-management.io/v1
+              compliance: Compliant
+              kind: ConfigurationPolicy
+              name: gitops-configure2
+          objectDefinition:
+            apiVersion: policy.open-cluster-management.io/v1
+            kind: ConfigurationPolicy
+            metadata:
+                name: gitops-configure3
+            spec:
+                object-templates:
+                    - complianceType: musthave
+                      objectDefinition:
+                        apiVersion: argoproj.io/v1beta1
+                        kind: ArgoCD
+                        metadata:
+                            name: openshift-gitops
+                            namespace: openshift-gitops
+                        spec:
+                            applicationSet:
+                                resources:
+                                    limits:
+                                        cpu: "2"
+                                        memory: 1Gi
+                                    requests:
+                                        cpu: 250m
+                                        memory: 512Mi
+                                webhookServer:
+                                    ingress:
+                                        enabled: false
+                                    route:
+                                        enabled: false
+                            rbac:
+                                defaultPolicy: ""
+                                policy: |
+                                    g, system:cluster-admins, role:admin
+                                    g, cluster-admins, role:admin
+                                scopes: '[groups]'
+                            repo:
+                                volumeMounts:
+                                    - mountPath: /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+                                      name: cluster-root-ca-bundle
+                                      subPath: ca-bundle.crt
+                                volumes:
+                                    - configMap:
+                                        name: cluster-root-ca-bundle
+                                      name: cluster-root-ca-bundle
+                            resourceExclusions: |
+                                - apiGroups:
+                                  - tekton.dev
+                                  clusters:
+                                  - '*'
+                                  kinds:
+                                  - TaskRun
+                                  - PipelineRun
+                            server:
+                                route:
+                                    enabled: true
+                            sso:
+                                dex:
+                                    openShiftOAuth: true
+                                    resources:
+                                        limits:
+                                            cpu: 500m
+                                            memory: 256Mi
+                                        requests:
+                                            cpu: 250m
+                                            memory: 128Mi
+                                provider: dex
+                remediationAction: enforce
+                severity: low
+    remediationAction: enforce
+---
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+    name: gitops-configure
+    namespace: gitops-configure
+spec:
+    predicates:
+        - requiredClusterSelector:
+            labelSelector:
+                matchExpressions:
+                    - key: vendor
+                      operator: In
+                      values:
+                        - OpenShift
+    tolerations:
+        - key: cluster.open-cluster-management.io/unavailable
+          operator: Exists
+        - key: cluster.open-cluster-management.io/unreachable
+          operator: Exists
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+    name: binding-gitops-configure
+    namespace: gitops-configure
+placementRef:
+    apiGroup: cluster.open-cluster-management.io
+    kind: Placement
+    name: gitops-configure
+subjects:
+    - apiGroup: policy.open-cluster-management.io
+      kind: Policy
+      name: gitops-configure
